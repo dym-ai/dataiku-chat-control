@@ -1,0 +1,15 @@
+{
+  "default": "MyInstance",
+  "instances": {
+    "MyInstance": {
+      "url": "https://your-instance.dataiku.com",
+      "api_key": "dkuaps-your-api-key-here",
+      "description": "My primary Dataiku instance"
+    },
+    "AnotherInstance": {
+      "url": "https://another-instance.dataiku.com",
+      "api_key": "dkuaps-another-api-key",
+      "description": "Secondary instance"
+    }
+  }
+}

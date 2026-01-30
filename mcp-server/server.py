@@ -6,12 +6,16 @@ pre-configured Dataiku client and helper modules. This follows the
 "code execution with MCP" pattern for maximum flexibility and minimal
 token overhead.
 
+Supports multiple Dataiku instances - use `use_instance` to switch between them.
+Configure instances in .dataiku-instances.json (see .dataiku-instances.example.json).
+
 Usage:
     python server.py
 """
 
 import sys
 import os
+import json
 from io import StringIO
 from pathlib import Path
 from textwrap import dedent
@@ -23,95 +27,120 @@ sys.path.insert(0, str(parent_dir))  # For client.py
 sys.path.insert(0, str(server_dir))  # For helpers package
 
 from mcp.server.fastmcp import FastMCP
-from dotenv import load_dotenv
+from dataikuapi import DSSClient
 
-# Load environment variables
-load_dotenv(parent_dir / ".env")
-
-# Check for required credentials
-_dataiku_url = os.environ.get("DATAIKU_URL")
-_dataiku_api_key = os.environ.get("DATAIKU_API_KEY")
-_credentials_missing = not _dataiku_url or not _dataiku_api_key
-
-# Import after path setup
-from client import get_client
 import helpers
 from helpers import jobs, inspection, search, export
 
-# Build instructions based on credential status
-if _credentials_missing:
-    _instructions = dedent("""
-    ⚠️  DATAIKU CREDENTIALS NOT CONFIGURED
+# =============================================================================
+# Instance Configuration - Load from config file
+# =============================================================================
 
-    The Dataiku MCP server requires DATAIKU_URL and DATAIKU_API_KEY to be set.
+CONFIG_FILE = parent_dir / ".dataiku-instances.json"
+EXAMPLE_CONFIG_FILE = parent_dir / ".dataiku-instances.example.json"
 
-    To configure, edit your Claude Code MCP settings (~/.claude/mcp_settings.json):
+def load_instances():
+    """Load instance configurations from the config file."""
+    if not CONFIG_FILE.exists():
+        return None, None
 
-    {
-      "mcpServers": {
-        "dataiku": {
-          "command": "python",
-          "args": ["/path/to/mcp-server/server.py"],
-          "env": {
-            "DATAIKU_URL": "https://your-instance.dataiku.com",
-            "DATAIKU_API_KEY": "your-api-key-here"
-          }
-        }
-      }
-    }
+    with open(CONFIG_FILE) as f:
+        config = json.load(f)
 
-    To get an API key in Dataiku: Profile → API Keys → Create New API Key
+    return config.get("instances", {}), config.get("default", None)
 
-    After updating, restart Claude Code for changes to take effect.
+INSTANCES, DEFAULT_INSTANCE = load_instances()
+
+# Check if config is missing
+_config_missing = INSTANCES is None or len(INSTANCES) == 0
+
+if _config_missing:
+    _instructions = dedent(f"""
+    ⚠️  DATAIKU INSTANCES NOT CONFIGURED
+
+    Please create a config file at:
+      {CONFIG_FILE}
+
+    Copy from the example file:
+      cp {EXAMPLE_CONFIG_FILE} {CONFIG_FILE}
+
+    Then edit with your instance details:
+    {{
+      "default": "MyInstance",
+      "instances": {{
+        "MyInstance": {{
+          "url": "https://your-instance.dataiku.com",
+          "api_key": "dkuaps-your-api-key",
+          "description": "My Dataiku instance"
+        }}
+      }}
+    }}
+
+    After creating the config, restart Claude Code.
     """).strip()
+    INSTANCES = {}
+    DEFAULT_INSTANCE = None
 else:
-    _instructions = dedent("""
-    Dataiku DSS control server. Use the execute_python tool to run Python code
-    with a pre-configured Dataiku client.
+    # Build instructions with available instances
+    instance_list = "\n".join(
+        f'  - {name}: {cfg["description"]} ({cfg["url"]})'
+        for name, cfg in INSTANCES.items()
+    )
+    _instructions = dedent(f"""
+    Dataiku DSS control server with multi-instance support.
+
+    **Current instance: {DEFAULT_INSTANCE}** (default)
+
+    Available instances:
+    {instance_list}
+
+    Use `use_instance("InstanceName")` to switch instances at the start of a session.
 
     Available in the execution namespace:
     - client: Authenticated DSSClient instance
-    - helpers.jobs: Build/scenario waiting (build_and_wait, run_scenario_and_wait, compute_and_apply_schema)
-    - helpers.inspection: Data exploration (dataset_info, project_summary)
-    - helpers.search: Cross-project search (find_datasets, find_by_connection)
-    - helpers.export: Data extraction (to_records, sample, head)
+    - helpers.jobs: build_and_wait, run_scenario_and_wait, compute_and_apply_schema
+    - helpers.inspection: dataset_info, project_summary
+    - helpers.search: find_datasets, find_by_connection
+    - helpers.export: to_records, sample, head
 
     Example:
         # List all projects
         print(client.list_project_keys())
 
-        # Get project summary
-        from helpers.inspection import project_summary
-        print(project_summary(client, "MY_PROJECT"))
-
-        # Build a dataset and wait
-        from helpers.jobs import build_and_wait
-        result = build_and_wait(client, "MY_PROJECT", "my_dataset")
-        print(result)
-
     IMPORTANT: After creating or modifying a recipe, you MUST compute and apply schema
-    before building, or the build will fail with missing column errors:
-        from helpers.jobs import compute_and_apply_schema
-        compute_and_apply_schema(client, "PROJECT", "recipe_name")
-
-    IMPORTANT: When joining datasets, output columns get prefixed with the input dataset
-    name and double underscore. For example, joining 'crm' and 'web' datasets:
-    - 'web.ip' becomes 'web__ip' (double underscore)
-    - 'crm.customer_id' stays 'customer_id' (left table keeps original names)
+    before building, or the build will fail with missing column errors.
     """).strip()
 
-# Initialize MCP server
-mcp = FastMCP("dataiku", instructions=_instructions)
+# =============================================================================
+# Server State
+# =============================================================================
 
-# Initialize the Dataiku client
+_current_instance = DEFAULT_INSTANCE
 _client = None
 
 def get_dataiku_client():
-    """Get or create the Dataiku client singleton."""
+    """Get or create the Dataiku client for current instance."""
     global _client
-    if _client is None:
-        _client = get_client()
+    if _current_instance and _current_instance in INSTANCES:
+        instance_config = INSTANCES[_current_instance]
+        _client = DSSClient(instance_config["url"], instance_config["api_key"])
     return _client
+
+def switch_instance(instance_name: str) -> bool:
+    """Switch to a different Dataiku instance."""
+    global _current_instance, _client
+    if instance_name in INSTANCES:
+        _current_instance = instance_name
+        _client = None  # Reset client so it reconnects
+        return True
+    return False
+
+# =============================================================================
+# MCP Server Setup
+# =============================================================================
+
+# Initialize MCP server
+mcp = FastMCP("dataiku", instructions=_instructions)
 
 # Persistent execution namespace
 execution_globals = {
@@ -122,6 +151,53 @@ execution_globals = {
     "search": search,
     "export": export,
 }
+
+
+@mcp.tool()
+def use_instance(instance_name: str) -> str:
+    """Switch to a different Dataiku instance.
+
+    Call this at the start of a session to connect to a specific instance.
+
+    Args:
+        instance_name: Name of the instance to use (e.g., "Jed", "Analytics")
+
+    Returns:
+        Confirmation message with instance details
+    """
+    if _config_missing:
+        return f"No instances configured. Please create {CONFIG_FILE}"
+
+    if instance_name not in INSTANCES:
+        available = ", ".join(INSTANCES.keys())
+        return f"Unknown instance '{instance_name}'. Available instances: {available}"
+
+    if switch_instance(instance_name):
+        config = INSTANCES[instance_name]
+        # Reset the client in execution globals
+        execution_globals["client"] = get_dataiku_client()
+        return f"Switched to instance '{instance_name}'\nURL: {config['url']}\nDescription: {config['description']}"
+
+    return f"Failed to switch to instance '{instance_name}'"
+
+
+@mcp.tool()
+def list_instances() -> str:
+    """List all available Dataiku instances.
+
+    Returns:
+        List of configured instances with their details
+    """
+    if _config_missing:
+        return f"No instances configured. Please create {CONFIG_FILE}"
+
+    lines = [f"Current instance: {_current_instance}", "", "Available instances:"]
+    for name, config in INSTANCES.items():
+        marker = " (active)" if name == _current_instance else ""
+        lines.append(f"  - {name}{marker}")
+        lines.append(f"      URL: {config['url']}")
+        lines.append(f"      Description: {config['description']}")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -143,21 +219,8 @@ def execute_python(code: str) -> str:
     Returns:
         stdout output from the code, or error message if execution fails
     """
-    # Check for credentials
-    if _credentials_missing:
-        return dedent("""
-        ERROR: Dataiku credentials not configured.
-
-        Please add DATAIKU_URL and DATAIKU_API_KEY to your MCP server config.
-
-        Edit ~/.claude/mcp_settings.json and add to the "dataiku" server:
-          "env": {
-            "DATAIKU_URL": "https://your-instance.dataiku.com",
-            "DATAIKU_API_KEY": "your-api-key"
-          }
-
-        Then restart Claude Code.
-        """).strip()
+    if _config_missing:
+        return f"No instances configured. Please create {CONFIG_FILE}"
 
     # Ensure client is in namespace
     execution_globals["client"] = get_dataiku_client()
