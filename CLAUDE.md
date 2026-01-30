@@ -100,6 +100,32 @@ envs = client.list_code_envs()
 - **Python API Reference**: https://developer.dataiku.com/latest/api-reference/python/client.html
 - **GitHub Source**: https://github.com/dataiku/dataiku-api-client-python
 
+## Creating External (Unmanaged) Datasets
+
+When creating datasets that read from existing tables in a SQL connection (Snowflake, etc.), you must use the proper API methods. **Do not** manually set `managed=False` on a dataset - this creates a broken state where the dataset shows with a dotted border in the flow.
+
+**Reference**: https://developer.dataiku.com/latest/concepts-and-examples/datasets/datasets-other.html#programmatic-creation-and-setup-external-datasets
+
+**Correct approach:**
+```python
+project = client.get_project("PROJECT_KEY")
+
+# Create the dataset using create_sql_table_dataset
+dataset = project.create_sql_table_dataset(
+    dataset_name="my_dataset",
+    type="Snowflake",
+    connection="my_connection",
+    table="TABLE_NAME",
+    schema="SCHEMA_NAME"
+)
+
+# IMPORTANT: Run autodetect_settings and save
+settings = dataset.autodetect_settings()
+settings.save()
+```
+
+The `autodetect_settings()` call is essential - it properly initializes the schema and status from the source table.
+
 ## Workflow for Claude Code
 
 When asked to perform a Dataiku action:

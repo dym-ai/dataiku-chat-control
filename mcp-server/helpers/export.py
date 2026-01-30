@@ -3,7 +3,7 @@
 These helpers get data out of Dataiku in useful formats.
 """
 
-from typing import Optional
+from typing import Optional, Iterator, Dict, Any, List
 
 
 def to_records(client, project_key: str, dataset_name: str,
