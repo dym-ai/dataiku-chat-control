@@ -7,6 +7,20 @@ description: "Use when creating, configuring, or running any Dataiku recipe (pre
 
 Reference patterns for creating different recipe types via the Python API.
 
+## Before Writing Code
+
+**MANDATORY**: Read the relevant reference file before writing any recipe code.
+
+- GREL formulas → read [references/grel-functions.md](references/grel-functions.md) first
+- Prepare steps → read [references/processors.md](references/processors.md) first
+- Joins → read [references/join-recipe.md](references/join-recipe.md) first
+- Grouping → read [references/group-recipe.md](references/group-recipe.md) first
+- Python recipes → read [references/python-recipe.md](references/python-recipe.md) first
+- Date handling → read [references/date-operations.md](references/date-operations.md) first
+- Pitfalls index → [references/pitfalls.md](references/pitfalls.md) (each reference file also has a Pitfalls section at the top)
+
+**Do NOT rely on general knowledge for GREL functions or API methods.** Dataiku GREL differs from OpenRefine GREL and other variants. Always verify function names against the reference.
+
 ## Recipe Type Decision Table
 
 | Recipe Type | Use When | Key Method |
@@ -25,7 +39,7 @@ Every recipe follows the same create-configure-run lifecycle:
 # 1. Create via builder
 builder = project.new_recipe("<type>", "<recipe_name>")
 builder.with_input("<input_dataset>")
-builder.with_output("<output_dataset>")
+builder.with_new_output("<output_dataset>", "<connection>")  # creates output dataset
 recipe = builder.create()
 
 # 2. Configure settings
@@ -33,7 +47,7 @@ settings = recipe.get_settings()
 # ... recipe-specific configuration ...
 settings.save()
 
-# 3. Apply schema updates (visual recipes only)
+# 3. Apply schema updates
 schema_updates = recipe.compute_schema_updates()
 if schema_updates.any_action_required():
     schema_updates.apply()
@@ -43,103 +57,38 @@ job = recipe.run(no_fail=True)
 state = job.get_status()["baseStatus"]["state"]  # "DONE" or "FAILED"
 ```
 
-## Prepare Recipe Quick Reference
+## After Running Any Recipe
 
-Prepare recipes use `add_processor_step()` (preferred) or `raw_steps.append()` to add processors:
+**Always sample the output and verify the result before reporting success.** Silent data issues (wrong values, all nulls, unexpected types) are common.
 
 ```python
-settings = recipe.get_settings()
-
-# Preferred: add_processor_step(type, params)
-settings.add_processor_step("CreateColumnWithGREL", {
-    "column": "revenue",
-    "expression": "price * quantity"
-})
-
-# Alternative: raw_steps.append() for direct dict manipulation
-# settings.raw_steps.append({
-#     "type": "CreateColumnWithGREL",
-#     "params": {"column": "revenue", "expression": "price * quantity"}
-# })
-
-settings.save()
+from helpers.export import sample
+rows = sample(client, "PROJECT_KEY", "output_dataset", 5)
+for r in rows:
+    print(r)
 ```
-
-### Common Processors
-
-| Processor | Purpose |
-|-----------|---------|
-| `CreateColumnWithGREL` | Add calculated / derived columns |
-| `ColumnTrimmer` | Strip whitespace from text columns |
-| `ColumnLowercaser` | Lowercase text for consistency |
-| `FillEmptyWithValue` | Replace nulls with a default |
-| `FilterOnValue` | Keep or remove rows by column value |
-| `FilterOnFormula` | Keep or remove rows by GREL expression |
-| `ColumnRenamer` | Rename columns |
-| `ColumnsSelector` | Keep or remove a set of columns |
-| `ColumnSplitter` | Split a column by delimiter |
-| `DateParser` | Parse string to date |
-| `DateFormatter` | Format date to string |
-
-### Top 5 GREL Patterns
-
-| Pattern | Example | Notes |
-|---------|---------|-------|
-| Math | `price * quantity` | Standard operators `+`, `-`, `*`, `/` |
-| Conditional | `if(amount > 1000, 'large', 'small')` | Nestable: `if(..., ..., if(...))` |
-| String ops | `upper(name)`, `trim(val)`, `length(s)` | Also `lower()`, `toString()` |
-| Date extraction | `datePart(order_date, 'month')` | Parts: `year`, `month`, `day`, `hour` |
-| Coalesce | `coalesce(val, 'default')` | Returns first non-null argument |
 
 ## Always Remember
 
 1. Call `settings.save()` after configuration changes
-2. Call `compute_schema_updates().apply()` for visual recipes (join, grouping, etc.)
+2. Call `compute_schema_updates().apply()` for visual recipes
 3. Call `recipe.run(no_fail=True)` to execute (already waits for completion)
-4. Check `job.get_status()["baseStatus"]["state"]` for success ("DONE") or failure ("FAILED")
-5. Verify output dataset has expected data and schema
+4. Check `job.get_status()["baseStatus"]["state"]` for `"DONE"` or `"FAILED"`
+5. **Sample and verify the output data** before reporting success
 
-## Common Pitfalls
+## Tested Patterns
 
-### Schema Propagation
-Visual recipes (join, grouping) need schema updates applied before running:
-```python
-schema_updates = recipe.compute_schema_updates()
-if schema_updates.any_action_required():
-    schema_updates.apply()
-```
+Copy-paste patterns that have been validated against a live Dataiku instance:
 
-### Column Case for SQL Databases
-Use UPPERCASE column names in dataset schemas to avoid "invalid identifier" errors:
-```python
-for col in raw["schema"]["columns"]:
-    col["name"] = col["name"].upper()
-```
-
-### Job Completion
-`recipe.run()` already waits -- do not look for `wait_for_completion()`.
-
-Full signature:
-```python
-job = recipe.run(job_type='NON_RECURSIVE_FORCED_BUILD', partitions=None, wait=True, no_fail=False)
-```
-
-- `job_type` — Controls build behavior. `'NON_RECURSIVE_FORCED_BUILD'` (default) rebuilds only this recipe; use `'RECURSIVE_FORCED_BUILD'` to rebuild upstream dependencies too.
-- `partitions` — Specify partition identifiers when running on partitioned datasets. Defaults to `None` (all/non-partitioned).
-- `wait` — When `True` (default), blocks until the job completes. Set to `False` for async execution, then poll `job.get_status()` yourself.
-- `no_fail` — When `False` (default), raises an exception if the job fails. Set to `True` to suppress exceptions and inspect the job status manually.
-
-Typical usage:
-```python
-job = recipe.run(no_fail=True)  # Returns after job completes
-state = job.get_status()["baseStatus"]["state"]  # "DONE" or "FAILED"
-```
+- [patterns/bin-numeric-column.py](references/patterns/bin-numeric-column.py) — Bin a string numeric column into ranges
+- [patterns/calculated-columns.py](references/patterns/calculated-columns.py) — Common GREL formula patterns
+- [patterns/filter-and-clean.py](references/patterns/filter-and-clean.py) — Data cleaning pipeline
 
 ## Detailed References
 
 **Recipe types:**
-- [references/prepare-recipe.md](references/prepare-recipe.md) — Prepare recipe builder pattern, raw_steps API
-- [references/join-recipe.md](references/join-recipe.md) — Join configuration, multi-table joins, column selection, prefix behavior
+- [references/prepare-recipe.md](references/prepare-recipe.md) — Prepare recipe builder, `add_processor_step()` API
+- [references/join-recipe.md](references/join-recipe.md) — Join configuration, multi-table joins, column selection
 - [references/group-recipe.md](references/group-recipe.md) — Aggregation flags, output naming, type compatibility
 - [references/sync-recipe.md](references/sync-recipe.md) — Sync recipe pattern
 - [references/python-recipe.md](references/python-recipe.md) — Python recipe with `set_code`
@@ -149,6 +98,5 @@ state = job.get_status()["baseStatus"]["state"]  # "DONE" or "FAILED"
 - [references/grel-functions.md](references/grel-functions.md) — Full GREL function table and formula syntax
 - [references/date-operations.md](references/date-operations.md) — DateParser, DateFormatter, datePart examples
 
-## Working Examples
-
-- [scripts/run_recipe.py](../../scripts/run_recipe.py) — Run any recipe by name and check job status
+**Troubleshooting:**
+- [references/pitfalls.md](references/pitfalls.md) — Index of all pitfalls (details are inline in each reference file)

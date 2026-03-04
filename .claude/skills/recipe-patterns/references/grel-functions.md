@@ -2,6 +2,20 @@
 
 GREL (General Refine Expression Language) is used inside `CreateColumnWithGREL` and `FilterOnFormula` processors.
 
+## Pitfalls
+
+**Type casting:** Use `toNumber()` to cast strings to numeric. `numval()`, `val()`, `toInt()`, `toLong()` all return null silently — the recipe succeeds but every comparison fails and falls through to the else branch. Dataiku GREL is NOT the same as OpenRefine GREL.
+
+```
+# WRONG — returns null, all rows get the else value
+if(numval(age) < 18, 'minor', 'adult')
+
+# CORRECT
+if(toNumber(age) < 18, 'minor', 'adult')
+```
+
+**Silent failures:** GREL formulas never throw errors for bad function names. They just return null. Always sample output to verify.
+
 ## Function Table
 
 | Function | Example | Result |

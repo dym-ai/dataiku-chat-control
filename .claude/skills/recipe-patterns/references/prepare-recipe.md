@@ -2,13 +2,21 @@
 
 Use for: Column transformations, filtering, formula columns, renaming.
 
+## Pitfalls
+
+**Output dataset:** Use `with_new_output("name", "connection")` to create the output dataset automatically. Using `with_output("name")` on a dataset that doesn't exist fails with: `Need to create output dataset or folder, but creationInfo params are suppressing it`.
+
+**Schema propagation:** Always call `compute_schema_updates().apply()` after configuring steps — otherwise new columns won't appear in the output schema.
+
+**GREL functions:** Before writing any GREL expression, read [grel-functions.md](grel-functions.md). Do not guess function names.
+
 ## Builder Pattern
 
 ```python
 # Create prepare recipe using builder pattern
 builder = project.new_recipe("prepare", "prepare_mydata")
 builder.with_input("source_dataset")
-builder.with_output("prepared_dataset")
+builder.with_new_output("prepared_dataset", "dataiku-managed-storage")
 recipe = builder.create()
 
 # Get settings and add processors

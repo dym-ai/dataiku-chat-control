@@ -2,6 +2,16 @@
 
 Use for: Aggregations (sum, count, avg, etc.)
 
+## Pitfalls
+
+**Output column naming:** `count_distinct` produces `_distinct` suffix, NOT `_countDistinct`. Check the naming table below.
+
+**Type compatibility:** `sum`, `avg`, `stddev` only work on numeric columns. Using them on strings causes runtime errors.
+
+**first/last require orderColumn:** Without `orderColumn`, the recipe fails. Use `min`/`max` instead if you just need earliest/latest values.
+
+**Schema propagation:** Always call `compute_schema_updates().apply()` after configuring aggregations.
+
 ## Basic Grouping
 
 ```python

@@ -2,6 +2,16 @@
 
 Use for: Combining datasets on key columns.
 
+## Pitfalls
+
+**Case-sensitive keys:** Join keys match values case-sensitively. `"ABC" != "abc"`. Normalize case with a prepare recipe before joining.
+
+**Prefix separator:** Dataiku adds its own `_` between prefix and column name. A prefix of `"tableb"` → `tableb_col`. Don't add a trailing underscore or you get double: `tableb__col`.
+
+**DROP mode unreliable:** `columnsSelection` with `mode: "DROP"` may still leave prefixed versions of dropped columns in output. Use `mode: "SELECT"` and explicitly list columns you want.
+
+**Schema propagation:** Always call `compute_schema_updates().apply()` after configuring joins.
+
 ## Basic Join (Two Datasets)
 
 ```python

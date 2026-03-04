@@ -47,7 +47,14 @@ compute_and_apply_schema(client, "PROJECT", "recipe_name")
 
 ## Skills
 
-This project includes skills in `.claude/skills/` that are automatically discovered by Claude Code. Each skill contains a `SKILL.md` with usage guidance and a `references/` folder with detailed code examples. Consult the relevant skill and its references before writing Dataiku API code.
+This project includes skills in `.claude/skills/` that are automatically discovered by Claude Code. Each skill contains a `SKILL.md` with usage guidance and a `references/` folder with detailed code examples.
+
+### How to Use Skills Effectively
+
+1. **Always read the relevant reference files** before writing Dataiku API code — do not rely on general knowledge. Dataiku's API has subtle differences from similar tools.
+2. **Read the Pitfalls section** at the top of each reference file before writing code. Each file documents its own gotchas inline. See `references/pitfalls.md` for a quick index.
+3. **Use tested patterns** from `references/patterns/` when available — copy and adapt rather than writing from scratch.
+4. **Always verify output data** after running a recipe. Sample the output and check values before reporting success. Recipes can succeed but produce wrong data.
 
 ## API Documentation
 

@@ -2,6 +2,12 @@
 
 Use for: Custom transformations not possible with visual recipes.
 
+## Pitfalls
+
+**New output method name:** For Python recipes, use `with_new_output_dataset()` — NOT `with_new_output()`. The method name differs from visual recipes.
+
+**Job completion:** `recipe.run()` already waits. Do not call `wait_for_completion()` — it doesn't exist.
+
 ## With Existing Output Dataset
 
 ```python
