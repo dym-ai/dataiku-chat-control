@@ -67,12 +67,20 @@ def setup(client, test_name):
     }
 
 
-def validate(client, test_name, project_key):
+def validate(client, test_name, project_key, agent_stats=None):
     """Validate that the project outputs match expected fixture data.
+
+    Args:
+        client: DSSClient instance
+        test_name: fixture name (e.g. "dates", "crane")
+        project_key: the test project to validate
+        agent_stats: optional dict with agent performance metrics, e.g.
+            {"total_tokens": 80064, "tool_uses": 93, "duration_ms": 745545}
 
     Returns dict with:
         - passed: bool
         - checks: list of individual check results
+        - agent_stats: the stats dict if provided
     """
     fixture = _load_fixture(test_name)
     project = client.get_project(project_key)
@@ -210,7 +218,10 @@ def validate(client, test_name, project_key):
         checks.append(check)
 
     passed = all(c["passed"] for c in checks)
-    return {"passed": passed, "checks": checks}
+    result = {"passed": passed, "checks": checks}
+    if agent_stats:
+        result["agent_stats"] = agent_stats
+    return result
 
 
 def teardown(client, project_key):

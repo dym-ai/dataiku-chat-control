@@ -9,13 +9,35 @@ Requires DATAIKU_URL and DATAIKU_API_KEY environment variables.
 """
 
 import argparse
+import json
 import os
+import re
 import sys
 import subprocess
+import time
 
 import dataikuapi
 
 from bobchallenge import setup, validate, teardown
+
+
+def _parse_agent_stats(stdout, duration_ms):
+    """Extract usage stats from claude CLI output."""
+    stats = {"duration_ms": duration_ms}
+
+    # Claude CLI prints stats in various formats; try to extract them
+    for line in stdout.splitlines():
+        line = line.strip()
+        if "total_tokens" in line:
+            m = re.search(r"total_tokens[:\s]+(\d+)", line)
+            if m:
+                stats["total_tokens"] = int(m.group(1))
+        if "tool_uses" in line or "tool_calls" in line:
+            m = re.search(r"(?:tool_uses|tool_calls)[:\s]+(\d+)", line)
+            if m:
+                stats["tool_uses"] = int(m.group(1))
+
+    return stats
 
 
 def run(test_name, keep=False):
@@ -37,18 +59,23 @@ def run(test_name, keep=False):
         f"Build and verify the output dataset before finishing."
     )
 
-    result = subprocess.run(
+    start = time.time()
+    agent_result = subprocess.run(
         ["claude", "-p", prompt],
         capture_output=True,
         text=True,
     )
-    print(result.stdout[-500:] if len(result.stdout) > 500 else result.stdout)
-    if result.returncode != 0:
-        print(f"    Agent failed (exit code {result.returncode})")
-        print(result.stderr[-500:])
+    duration_ms = int((time.time() - start) * 1000)
+
+    print(agent_result.stdout[-500:] if len(agent_result.stdout) > 500 else agent_result.stdout)
+    if agent_result.returncode != 0:
+        print(f"    Agent failed (exit code {agent_result.returncode})")
+        print(agent_result.stderr[-500:])
+
+    agent_stats = _parse_agent_stats(agent_result.stdout, duration_ms)
 
     print(f"\n--- Validating...")
-    result = validate(client, test_name, case["project_key"])
+    result = validate(client, test_name, case["project_key"], agent_stats=agent_stats)
 
     for check in result["checks"]:
         status = "PASS" if check["passed"] else "FAIL"
@@ -59,13 +86,23 @@ def run(test_name, keep=False):
 
     print(f"\n{'PASSED' if result['passed'] else 'FAILED'}")
 
+    if result.get("agent_stats"):
+        stats = result["agent_stats"]
+        duration_s = stats.get("duration_ms", 0) / 1000
+        print(f"\n--- Agent stats:")
+        print(f"    Duration: {duration_s:.1f}s")
+        if "total_tokens" in stats:
+            print(f"    Tokens: {stats['total_tokens']:,}")
+        if "tool_uses" in stats:
+            print(f"    Tool calls: {stats['tool_uses']}")
+
     if keep:
         print(f"\n--- Keeping project: {case['project_key']}")
     else:
         print(f"\n--- Cleaning up...")
         teardown(client, case["project_key"])
 
-    return result["passed"]
+    return result
 
 
 if __name__ == "__main__":
@@ -74,5 +111,5 @@ if __name__ == "__main__":
     parser.add_argument("--keep", action="store_true", help="Keep the test project after validation")
     args = parser.parse_args()
 
-    passed = run(args.test_name, keep=args.keep)
-    sys.exit(0 if passed else 1)
+    result = run(args.test_name, keep=args.keep)
+    sys.exit(0 if result["passed"] else 1)
