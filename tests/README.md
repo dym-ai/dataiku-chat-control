@@ -1,18 +1,20 @@
 # Dataiku Agent Test Suite
 
-An agent-agnostic test harness for validating whether a coding agent can build Dataiku pipelines correctly. Test cases are derived from the `BOBCHALLENGE` project on the Dataiku instance.
+An agent-agnostic test harness for validating whether a coding agent can build Dataiku pipelines correctly.
 
 ## How It Works
 
 The test suite has three components:
 
-- **BOBCHALLENGE** — a Dataiku project with hand-built pipelines that serve as the answer key
-- **Fixtures** (`bobchallenge/fixtures/*.json`) — snapshots of what "correct" looks like: the prompt to give the agent, expected recipe types, and expected output data
-- **Harness** (`bobchallenge/__init__.py`) — three functions: `setup()`, `validate()`, `teardown()`
+- **Source projects** — Dataiku projects with hand-built pipelines that serve as the answer key (e.g. `BOBCHALLENGE`, or any project you choose)
+- **Fixtures** (`harness/fixtures/*.json`) — snapshots of what "correct" looks like: the prompt to give the agent, expected recipe types, and expected output data
+- **Harness** (`harness/__init__.py`) — three functions: `setup()`, `validate()`, `teardown()`
+
+Each fixture references a `source_project` on your Dataiku instance. You can write fixtures against any project — they're not tied to a specific one.
 
 ### The Three Phases
 
-**1. Setup** creates a fresh Dataiku project and copies source datasets from BOBCHALLENGE:
+**1. Setup** creates a fresh Dataiku project and copies source datasets from the fixture's source project:
 
 ```python
 case = setup(client, "dates")
@@ -41,6 +43,8 @@ result = validate(client, "dates", case["project_key"])
 
 ## Available Test Cases
 
+These fixtures ship with the repo (source project: `BOBCHALLENGE`):
+
 | Fixture | Recipes | Recipe Types | What It Tests |
 |---------|---------|-------------|---------------|
 | `dates` | 1 | prepare | Date parsing + GREL formula to compute end-of-month |
@@ -50,8 +54,8 @@ result = validate(client, "dates", case["project_key"])
 
 ### Prerequisites
 
-- A running Dataiku DSS instance with the `BOBCHALLENGE` project
-- The BOBCHALLENGE source datasets must have data (uploaded files)
+- A running Dataiku DSS instance with the source project referenced by your fixtures
+- Source datasets in that project must have data (uploaded files)
 - Python with `dataikuapi` installed
 
 ### Option A: Interactive (via MCP session)
@@ -59,7 +63,7 @@ result = validate(client, "dates", case["project_key"])
 If you're in a Claude Code session (or any agent session) with the Dataiku MCP server connected:
 
 ```python
-from tests.bobchallenge import setup, validate, teardown
+from tests.harness import setup, validate, teardown
 
 # 1. Create the test project
 case = setup(client, "dates")
@@ -129,15 +133,15 @@ The one hard rule: **no Python recipes when visual recipes would suffice**. The 
 
 ## Adding a New Test Case
 
-1. Build the pipeline in BOBCHALLENGE (or verify it's already built)
-2. Create a new JSON file in `bobchallenge/fixtures/`. The fixture schema:
+1. Build the pipeline in your source project (or verify it's already built)
+2. Create a new JSON file in `harness/fixtures/`. The fixture schema:
 
 ```json
 {
   "name": "my_test",
   "description": "What this test validates.",
   "prompt": "The natural language task to give the agent...",
-  "source_project": "BOBCHALLENGE",
+  "source_project": "MY_PROJECT",
   "sources": ["Source_Dataset_Name"],
   "source_renames": {
     "Ugly_Long_Dataset_Name": "Clean_Name"
@@ -161,17 +165,18 @@ The one hard rule: **no Python recipes when visual recipes would suffice**. The 
 ```
 
 Key fields:
+- **`source_project`** — any Dataiku project on your instance that has the source data
 - **`prompt`** — describe the task naturally; this is what the agent sees
-- **`sources`** — datasets to copy from BOBCHALLENGE into the test project
+- **`sources`** — datasets to copy from the source project into the test project
 - **`source_renames`** — optional mapping to give datasets cleaner names in the test project
 - **`expected_recipes`** — recipe types that should be used (validated by count, not exact names)
 - **`expected_outputs`** — the final output to validate (schema + row count + sample data for spot-checking)
 
 3. Test it: `python tests/run_test.py my_test --keep`
 
-## Remaining BOBCHALLENGE Pipelines
+## Included BOBCHALLENGE Pipelines
 
-These pipelines exist in BOBCHALLENGE and could be turned into fixtures:
+The `BOBCHALLENGE` project has additional pipelines that could be turned into fixtures:
 
 | Use Case | Recipes | Recipe Types | Description |
 |----------|---------|-------------|-------------|

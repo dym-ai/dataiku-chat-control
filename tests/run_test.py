@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a bobchallenge test case against an agent.
+"""Run a test case against an agent.
 
 Usage:
     python tests/run_test.py dates
@@ -18,7 +18,7 @@ import time
 
 import dataikuapi
 
-from bobchallenge import setup, validate, teardown
+from harness import setup, validate, teardown
 
 
 def _parse_agent_stats(stdout, duration_ms):
@@ -106,7 +106,7 @@ def run(test_name, keep=False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run a bobchallenge test case")
+    parser = argparse.ArgumentParser(description="Run a Dataiku agent test case")
     parser.add_argument("test_name", nargs="?", default="dates")
     parser.add_argument("--keep", action="store_true", help="Keep the test project after validation")
     args = parser.parse_args()

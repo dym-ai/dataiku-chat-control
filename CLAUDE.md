@@ -58,7 +58,7 @@ This project includes skills in `.claude/skills/` that are automatically discove
 
 ## Tests
 
-The `tests/bobchallenge/` folder contains an agent-agnostic test harness that validates whether a coding agent can build Dataiku pipelines correctly. Test cases are derived from the `BOBCHALLENGE` project on the Dataiku instance.
+The `tests/harness/` folder contains an agent-agnostic test harness that validates whether a coding agent can build Dataiku pipelines correctly. Each fixture references a source project on the Dataiku instance (e.g. `BOBCHALLENGE`) but the harness works with any project.
 
 ### How It Works
 
@@ -70,8 +70,8 @@ Each test case has three phases:
 
 ### Validation Checks
 
-- **recipe_type** — did the agent use the correct visual recipe type (prepare, join, group, etc.) instead of defaulting to Python?
-- **recipe_inputs** — is the recipe wired to the correct input datasets?
+- **no_python_recipes** — did the agent use visual recipes instead of defaulting to Python?
+- **recipe_type_count** — are the right kinds of recipes present (e.g. at least 1 join, 3 prepare)?
 - **exists** — does the expected output dataset exist?
 - **schema_columns** — does the output have the right columns?
 - **row_count** — does the output have the expected number of rows?
@@ -80,7 +80,7 @@ Each test case has three phases:
 ### Interactive Usage (via MCP)
 
 ```python
-from tests.bobchallenge import setup, validate, teardown
+from tests.harness import setup, validate, teardown
 
 case = setup(client, "dates")       # creates project, copies source data
 print(case["prompt"])               # give this prompt to the agent under test
@@ -107,7 +107,7 @@ Requires `DATAIKU_URL` and `DATAIKU_API_KEY` environment variables. The CLI runn
 
 ### Adding Test Cases
 
-Drop a new JSON file in `tests/bobchallenge/fixtures/`. Each fixture specifies:
+Drop a new JSON file in `tests/harness/fixtures/`. Each fixture specifies:
 
 - `prompt` — the natural language task
 - `sources` — datasets to copy from `BOBCHALLENGE`
