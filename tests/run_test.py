@@ -18,7 +18,7 @@ import time
 
 import dataikuapi
 
-from harness import setup, validate, teardown
+from evals import setup, validate, teardown
 
 
 def _parse_agent_stats(stdout, duration_ms):

@@ -58,7 +58,7 @@ This project includes skills in `.claude/skills/` that are automatically discove
 
 ## Tests
 
-The `tests/harness/` folder contains an agent-agnostic test harness that validates whether a coding agent can build Dataiku pipelines correctly. Each fixture references a source project on the Dataiku instance (e.g. `BOBCHALLENGE`) but the harness works with any project.
+The `tests/evals/` folder contains an agent-agnostic test harness that validates whether a coding agent can build Dataiku pipelines correctly. Each fixture references a source project on the Dataiku instance (e.g. `BOBCHALLENGE`) but the harness works with any project.
 
 ### How It Works
 
@@ -80,7 +80,7 @@ Each test case has three phases:
 ### Interactive Usage (via MCP)
 
 ```python
-from tests.harness import setup, validate, teardown
+from tests.evals import setup, validate, teardown
 
 case = setup(client, "dates")       # creates project, copies source data
 print(case["prompt"])               # give this prompt to the agent under test
@@ -107,7 +107,7 @@ Requires `DATAIKU_URL` and `DATAIKU_API_KEY` environment variables. The CLI runn
 
 ### Adding Test Cases
 
-Drop a new JSON file in `tests/harness/fixtures/`. Each fixture specifies:
+Drop a new JSON file in `tests/evals/fixtures/`. Each fixture specifies:
 
 - `prompt` — the natural language task
 - `sources` — datasets to copy from `BOBCHALLENGE`

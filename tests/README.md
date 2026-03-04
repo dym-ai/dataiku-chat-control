@@ -7,8 +7,8 @@ An agent-agnostic test harness for validating whether a coding agent can build D
 The test suite has three components:
 
 - **Source projects** — Dataiku projects with hand-built pipelines that serve as the answer key (e.g. `BOBCHALLENGE`, or any project you choose)
-- **Fixtures** (`harness/fixtures/*.json`) — snapshots of what "correct" looks like: the prompt to give the agent, expected recipe types, and expected output data
-- **Harness** (`harness/__init__.py`) — three functions: `setup()`, `validate()`, `teardown()`
+- **Fixtures** (`evals/fixtures/*.json`) — snapshots of what "correct" looks like: the prompt to give the agent, expected recipe types, and expected output data
+- **Harness** (`evals/__init__.py`) — three functions: `setup()`, `validate()`, `teardown()`
 
 Each fixture references a `source_project` on your Dataiku instance. You can write fixtures against any project — they're not tied to a specific one.
 
@@ -63,7 +63,7 @@ These fixtures ship with the repo (source project: `BOBCHALLENGE`):
 If you're in a Claude Code session (or any agent session) with the Dataiku MCP server connected:
 
 ```python
-from tests.harness import setup, validate, teardown
+from tests.evals import setup, validate, teardown
 
 # 1. Create the test project
 case = setup(client, "dates")
@@ -134,7 +134,7 @@ The one hard rule: **no Python recipes when visual recipes would suffice**. The 
 ## Adding a New Test Case
 
 1. Build the pipeline in your source project (or verify it's already built)
-2. Create a new JSON file in `harness/fixtures/`. The fixture schema:
+2. Create a new JSON file in `evals/fixtures/`. The fixture schema:
 
 ```json
 {
