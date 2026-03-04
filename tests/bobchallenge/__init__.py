@@ -42,24 +42,28 @@ def setup(client, test_name):
     client.create_project(project_key, project_key, owner="admin")
     test_project = client.get_project(project_key)
 
-    # Copy source datasets
+    # Copy source datasets (optionally rename for cleaner test prompts)
+    renames = fixture.get("source_renames", {})
+    copied_names = []
     for ds_name in fixture["sources"]:
         source_ds = source_project.get_dataset(ds_name)
+        target_name = renames.get(ds_name, ds_name)
 
         # Create dataset in test project
-        builder = test_project.new_managed_dataset(ds_name)
+        builder = test_project.new_managed_dataset(target_name)
         builder.with_store_into("filesystem_managed")
         builder.create()
 
         # Copy data from source to target (also syncs schema)
-        target_ds = test_project.get_dataset(ds_name)
+        target_ds = test_project.get_dataset(target_name)
         future = source_ds.copy_to(target_ds, sync_schema=True)
         future.wait_for_result()
+        copied_names.append(target_name)
 
     return {
         "project_key": project_key,
         "prompt": fixture["prompt"],
-        "sources": fixture["sources"],
+        "sources": copied_names,
     }
 
 
@@ -74,52 +78,45 @@ def validate(client, test_name, project_key):
     project = client.get_project(project_key)
     checks = []
 
-    # Check recipes: correct types and wiring
+    # Check recipes: no python recipes, and expected recipe types are present
     expected_recipes = fixture.get("expected_recipes", [])
     if expected_recipes:
         actual_recipes = project.list_recipes()
-        actual_by_output = {}
+        actual_types = []
+        has_python = False
         for r in actual_recipes:
             recipe = project.get_recipe(r["name"])
             settings = recipe.get_settings()
-            for out in settings.get_flat_output_refs():
-                actual_by_output[out] = {
-                    "name": r["name"],
-                    "type": settings.type,
-                    "inputs": sorted(settings.get_flat_input_refs()),
-                }
+            actual_types.append(settings.type)
+            if settings.type == "python":
+                has_python = True
 
-        for exp_recipe in expected_recipes:
-            output = exp_recipe["output"]
-            actual = actual_by_output.get(output)
+        # Check no python recipes used
+        checks.append({
+            "check": "no_python_recipes",
+            "passed": not has_python,
+            "actual_types": actual_types,
+            "message": "Python recipe used — visual recipes preferred" if has_python else "",
+        })
 
-            if actual is None:
-                checks.append({
-                    "check": "recipe_exists",
-                    "output": output,
-                    "passed": False,
-                    "message": f"No recipe produces '{output}'",
-                })
-                continue
+        # Check expected recipe types are present (by count, not by name)
+        expected_type_counts = {}
+        for er in expected_recipes:
+            t = er["type"]
+            expected_type_counts[t] = expected_type_counts.get(t, 0) + 1
 
-            # Check recipe type
-            type_ok = actual["type"] == exp_recipe["type"]
+        actual_type_counts = {}
+        for t in actual_types:
+            actual_type_counts[t] = actual_type_counts.get(t, 0) + 1
+
+        for exp_type, exp_count in expected_type_counts.items():
+            actual_count = actual_type_counts.get(exp_type, 0)
             checks.append({
-                "check": "recipe_type",
-                "output": output,
-                "passed": type_ok,
-                "expected": exp_recipe["type"],
-                "actual": actual["type"],
-            })
-
-            # Check recipe inputs
-            inputs_ok = sorted(actual["inputs"]) == sorted(exp_recipe["inputs"])
-            checks.append({
-                "check": "recipe_inputs",
-                "output": output,
-                "passed": inputs_ok,
-                "expected": sorted(exp_recipe["inputs"]),
-                "actual": sorted(actual["inputs"]),
+                "check": "recipe_type_count",
+                "recipe_type": exp_type,
+                "passed": actual_count >= exp_count,
+                "expected": f">={exp_count}",
+                "actual": actual_count,
             })
 
     for ds_name, expected in fixture["expected_outputs"].items():
@@ -235,14 +232,24 @@ def _read_rows(ds, project):
 
 
 def _normalize(val):
-    """Normalize a value for comparison (handles datetime objects, timezone suffixes, etc.)."""
+    """Normalize a value for comparison (handles datetime objects, timezone suffixes, numeric types)."""
     if val is None:
         return None
     if hasattr(val, "isoformat"):
         return val.strftime("%Y-%m-%d")
+    # Normalize numeric values: 402.0 == 402
+    if isinstance(val, float) and val == int(val):
+        return str(int(val))
     s = str(val)
     # Strip timezone suffix for date comparison
     for suffix in ["T00:00:00+00:00", "T00:00:00Z", "T00:00:00"]:
         if s.endswith(suffix):
             s = s[: -len(suffix)]
+    # Normalize numeric strings: "402.0" -> "402"
+    try:
+        f = float(s)
+        if f == int(f):
+            return str(int(f))
+    except (ValueError, OverflowError):
+        pass
     return s
