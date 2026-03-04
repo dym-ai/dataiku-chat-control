@@ -2,44 +2,44 @@
 
 Complete reference for all processor types used in Dataiku prepare recipes.
 
+## Pitfalls
+
+**Prefer `add_processor_step()`** over `raw_steps.append()`. Both work, but `add_processor_step()` is the official API method. With `add_processor_step()`, pass params directly (no wrapping `"params"` key). With `raw_steps.append()`, wrap under `"params"`.
+
+**GREL functions:** Before writing any GREL expression, read [grel-functions.md](grel-functions.md). Do not guess function names — Dataiku GREL differs from OpenRefine.
+
 ## Common Cleaning Processors
 
 ```python
-import dataikuapi, os
+project = client.get_project("PROJECT_KEY")
 
-client = dataikuapi.DSSClient(os.environ["DSS_URL"], os.environ["DSS_API_KEY"])
-project = client.get_project(os.environ["DSS_PROJECT_KEY"])
-
-# Create recipe via builder pattern
 builder = project.new_recipe("prepare", "clean_data")
 builder.with_input("raw_data")
-builder.with_output("clean_data")
+builder.with_new_output("clean_data", "dataiku-managed-storage")
 recipe = builder.create()
 
 settings = recipe.get_settings()
 
 # Trim whitespace from text columns
-settings.raw_steps.append({
-    "type": "ColumnTrimmer",
-    "params": {"columns": ["name", "address"]}
+settings.add_processor_step("ColumnTrimmer", {
+    "columns": ["name", "address"]
 })
 
 # Lowercase for consistency
-settings.raw_steps.append({
-    "type": "ColumnLowercaser",
-    "params": {"columns": ["email"]}
+settings.add_processor_step("ColumnLowercaser", {
+    "columns": ["email"]
 })
 
 # Remove duplicates
-settings.raw_steps.append({
-    "type": "RemoveDuplicates",
-    "params": {"columns": ["id"]}
+settings.add_processor_step("RemoveDuplicates", {
+    "columns": ["id"]
 })
 
 # Fill nulls with default
-settings.raw_steps.append({
-    "type": "FillEmptyWithValue",
-    "params": {"column": "status", "value": "unknown"}
+settings.add_processor_step("FillEmptyWithValue", {
+    "appliesTo": "SINGLE_COLUMN",
+    "columns": ["status"],
+    "value": "unknown"
 })
 
 settings.save()
@@ -194,71 +194,55 @@ Split a column by delimiter into new columns.
 End-to-end example creating a prepare recipe that cleans, enriches, filters, and selects columns from a raw sales dataset.
 
 ```python
-import dataikuapi
-import os
+project = client.get_project("PROJECT_KEY")
 
-client = dataikuapi.DSSClient(os.environ["DSS_URL"], os.environ["DSS_API_KEY"])
-project = client.get_project(os.environ["DSS_PROJECT_KEY"])
-
-# Create prepare recipe via builder pattern
 builder = project.new_recipe("prepare", "prepare_sales")
 builder.with_input("raw_sales")
-builder.with_output("clean_sales")
+builder.with_new_output("clean_sales", "dataiku-managed-storage")
 recipe = builder.create()
 
 settings = recipe.get_settings()
 
 # Clean text fields
-settings.raw_steps.append({
-    "type": "ColumnTrimmer",
-    "params": {"columns": ["customer_name", "product"]}
+settings.add_processor_step("ColumnTrimmer", {
+    "columns": ["customer_name", "product"]
 })
 
 # Standardize case
-settings.raw_steps.append({
-    "type": "ColumnLowercaser",
-    "params": {"columns": ["email"]}
+settings.add_processor_step("ColumnLowercaser", {
+    "columns": ["email"]
 })
 
 # Add calculated fields
-settings.raw_steps.append({
-    "type": "CreateColumnWithGREL",
-    "params": {
-        "column": "revenue",
-        "expression": "price * quantity"
-    }
+settings.add_processor_step("CreateColumnWithGREL", {
+    "column": "revenue",
+    "expression": "price * quantity"
 })
-settings.raw_steps.append({
-    "type": "CreateColumnWithGREL",
-    "params": {
-        "column": "month",
-        "expression": "datePart(order_date, 'month')"
-    }
+settings.add_processor_step("CreateColumnWithGREL", {
+    "column": "month",
+    "expression": "datePart(order_date, 'month')"
 })
 
 # Filter valid records
-settings.raw_steps.append({
-    "type": "FilterOnFormula",
-    "params": {
-        "formula": "quantity > 0 && isNotBlank(customer_id)",
-        "action": "KEEP"
-    }
+settings.add_processor_step("FilterOnFormula", {
+    "formula": "quantity > 0 && isNotBlank(customer_id)",
+    "action": "KEEP"
 })
 
 # Keep only needed columns
-settings.raw_steps.append({
-    "type": "ColumnsSelector",
-    "params": {
-        "columns": ["order_id", "customer_id", "product", "revenue", "month", "order_date"],
-        "keep": True
-    }
+settings.add_processor_step("ColumnsSelector", {
+    "columns": ["order_id", "customer_id", "product", "revenue", "month", "order_date"],
+    "keep": True
 })
 
 settings.save()
 
-# Run recipe (blocks until complete)
+# Apply schema and run
+schema_updates = recipe.compute_schema_updates()
+if schema_updates.any_action_required():
+    schema_updates.apply()
+
 job = recipe.run(no_fail=True)
-status = job.get_status()
-state = status.get("baseStatus", {}).get("state")
+state = job.get_status()["baseStatus"]["state"]
 print(f"Job completed with status: {state}")
 ```

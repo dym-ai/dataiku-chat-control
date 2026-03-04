@@ -16,8 +16,9 @@ Reference patterns for creating different recipe types via the Python API.
 - Joins → read [references/join-recipe.md](references/join-recipe.md) first
 - Grouping → read [references/group-recipe.md](references/group-recipe.md) first
 - Python recipes → read [references/python-recipe.md](references/python-recipe.md) first
+- Sync recipes → read [references/sync-recipe.md](references/sync-recipe.md) first
 - Date handling → read [references/date-operations.md](references/date-operations.md) first
-- Pitfalls index → [references/pitfalls.md](references/pitfalls.md) (each reference file also has a Pitfalls section at the top)
+- Pitfalls index → [references/pitfalls.md](references/pitfalls.md) (recipe-type reference files also have a Pitfalls section at the top)
 
 **Do NOT rely on general knowledge for GREL functions or API methods.** Dataiku GREL differs from OpenRefine GREL and other variants. Always verify function names against the reference.
 

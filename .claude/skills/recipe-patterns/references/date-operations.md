@@ -2,6 +2,12 @@
 
 Processors and GREL functions for parsing, formatting, and extracting date components.
 
+## Pitfalls
+
+**Parse before extracting:** `datePart()` requires a parsed date column. If your date is stored as a string, use a `DateParser` step first, then call `datePart()` on the parsed column. Using `datePart()` on an unparsed string returns null silently.
+
+**Format patterns are Java-style:** Use `yyyy` (not `YYYY`), `MM` for month (not `mm` which is minutes), `dd` for day. Getting these wrong parses silently to wrong values.
+
 ## DateParser
 
 Parse a string column into a date using a format pattern.

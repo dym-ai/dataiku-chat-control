@@ -14,4 +14,8 @@ Pitfalls are documented inline at the top of each reference file. This index lin
 | `first`/`last` require `orderColumn` | [group-recipe.md](group-recipe.md) |
 | Python recipe uses `with_new_output_dataset()` not `with_new_output()` | [python-recipe.md](python-recipe.md) |
 | `recipe.run()` already waits — no `wait_for_completion()` | [python-recipe.md](python-recipe.md) |
+| Column case for SQL — force UPPERCASE | [sync-recipe.md](sync-recipe.md) |
+| `datePart()` requires parsed date column first | [date-operations.md](date-operations.md) |
+| Date format patterns are Java-style (`yyyy` not `YYYY`) | [date-operations.md](date-operations.md) |
+| Prefer `add_processor_step()` over `raw_steps.append()` | [processors.md](processors.md) |
 | Silent data issues — always sample output | All recipes |
