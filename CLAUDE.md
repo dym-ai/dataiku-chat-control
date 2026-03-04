@@ -56,6 +56,68 @@ This project includes skills in `.claude/skills/` that are automatically discove
 3. **Use tested patterns** from `references/patterns/` when available — copy and adapt rather than writing from scratch.
 4. **Always verify output data** after running a recipe. Sample the output and check values before reporting success. Recipes can succeed but produce wrong data.
 
+## Tests
+
+The `tests/bobchallenge/` folder contains an agent-agnostic test harness that validates whether a coding agent can build Dataiku pipelines correctly. Test cases are derived from the `BOBCHALLENGE` project on the Dataiku instance.
+
+### How It Works
+
+Each test case has three phases:
+
+1. **Setup** — creates a clean Dataiku project and copies source datasets
+2. **Agent execution** — the agent receives a natural language prompt and builds the pipeline (this step is the caller's responsibility)
+3. **Validate** — checks the agent's work against expected results
+
+### Validation Checks
+
+- **recipe_type** — did the agent use the correct visual recipe type (prepare, join, group, etc.) instead of defaulting to Python?
+- **recipe_inputs** — is the recipe wired to the correct input datasets?
+- **exists** — does the expected output dataset exist?
+- **schema_columns** — does the output have the right columns?
+- **row_count** — does the output have the expected number of rows?
+- **data_values** — do spot-checked rows match expected values?
+
+### Interactive Usage (via MCP)
+
+```python
+from tests.bobchallenge import setup, validate, teardown
+
+case = setup(client, "dates")       # creates project, copies source data
+print(case["prompt"])               # give this prompt to the agent under test
+
+# ... agent builds the pipeline in case["project_key"] ...
+
+result = validate(client, "dates", case["project_key"])
+print(result)                       # {"passed": True/False, "checks": [...]}
+
+teardown(client, case["project_key"])  # optional cleanup
+```
+
+### CLI Usage
+
+```bash
+# Run with auto-cleanup
+python tests/run_test.py dates
+
+# Run and keep the project for inspection
+python tests/run_test.py dates --keep
+```
+
+Requires `DATAIKU_URL` and `DATAIKU_API_KEY` environment variables. The CLI runner invokes `claude -p` as the agent, but the framework is agent-agnostic — swap in any agent that can talk to Dataiku.
+
+### Adding Test Cases
+
+Drop a new JSON file in `tests/bobchallenge/fixtures/`. Each fixture specifies:
+
+- `prompt` — the natural language task
+- `sources` — datasets to copy from `BOBCHALLENGE`
+- `expected_recipes` — recipe types and wiring to validate
+- `expected_outputs` — schema, row count, and sample data to check
+
+### Important: Visual Recipes Preferred
+
+The test harness validates that agents use Dataiku's visual recipes (prepare, join, group, window, etc.) when appropriate, rather than writing Python recipes. Python recipes should only be used when visual recipes are insufficient.
+
 ## API Documentation
 
 - [Developer Guide](https://developer.dataiku.com/latest/index.html)
