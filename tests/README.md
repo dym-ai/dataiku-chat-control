@@ -96,7 +96,7 @@ print(result["agent_stats"])  # Included in the result
 
 ### Option B: CLI (automated)
 
-Uses Claude Code (`claude -p`) as the agent:
+Uses Claude Code by default, but any agent adapter can be selected with `--agent`:
 
 ```bash
 export DATAIKU_URL=https://your-instance.dataiku.com
@@ -107,18 +107,47 @@ python tests/run_test.py dates
 
 # Keep the project after validation for inspection
 python tests/run_test.py crane --keep
+
+# Use a different agent adapter
+python tests/run_test.py dates --agent my_agent
 ```
 
-To test a different agent, replace the `subprocess.run(["claude", ...])` call in `run_test.py` with your agent's invocation.
+### Writing an Agent Adapter
+
+Create a Python module in `tests/agents/` that exports a `run` function:
+
+```python
+# tests/agents/my_agent.py
+
+def run(prompt, project_key):
+    """Execute the agent and return results.
+
+    Returns:
+        {"stdout": str, "returncode": int, "stats": dict}
+    """
+    # ... invoke your agent here ...
+    return {
+        "stdout": output_text,
+        "returncode": 0,
+        "stats": {"total_tokens": 1234, "tool_uses": 10},
+    }
+```
+
+The runner handles timing (`duration_ms`) automatically and merges it with any stats your adapter returns.
 
 ### Option C: As a Benchmark
 
 Run the same fixture against different agents and compare results:
 
+```bash
+python tests/run_test.py dates --agent claude
+python tests/run_test.py dates --agent my_agent
 ```
-Agent A (Claude Code):  dates PASS   107s   29k tokens   26 tool calls
-Agent B (Custom agent): dates PASS   180s   45k tokens   52 tool calls
-Agent C (Other):        dates FAIL   — used python recipe instead of visual
+
+```
+claude:   dates PASS   107s   29k tokens   26 tool calls
+my_agent: dates PASS   180s   45k tokens   52 tool calls
+other:    dates FAIL   — used python recipe instead of visual
 ```
 
 ## What Gets Graded

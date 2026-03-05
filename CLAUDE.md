@@ -96,14 +96,17 @@ teardown(client, case["project_key"])  # optional cleanup
 ### CLI Usage
 
 ```bash
-# Run with auto-cleanup
+# Run with auto-cleanup (default agent: claude)
 python tests/run_test.py dates
 
 # Run and keep the project for inspection
 python tests/run_test.py dates --keep
+
+# Use a different agent adapter
+python tests/run_test.py dates --agent my_agent
 ```
 
-Requires `DATAIKU_URL` and `DATAIKU_API_KEY` environment variables. The CLI runner invokes `claude -p` as the agent, but the framework is agent-agnostic — swap in any agent that can talk to Dataiku.
+Requires `DATAIKU_URL` and `DATAIKU_API_KEY` environment variables. Agent adapters live in `tests/agents/` — see `tests/README.md` for how to write one.
 
 ### Adding Test Cases
 
