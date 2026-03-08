@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Executor protocol implementation for Codex CLI."""
+"""CLI agent script for running Codex against the test protocol."""
 
 import argparse
 import json
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-from suite.prompting import build_executor_prompt
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from suite.prompting import build_agent_prompt
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Codex via the test executor protocol")
+    parser = argparse.ArgumentParser(description="Run Codex via the test agent protocol")
     parser.add_argument("--request", required=True)
     parser.add_argument("--response", required=True)
     parser.add_argument("--workspace", help="Override workspace from the request payload")
@@ -41,7 +44,7 @@ def main():
     )
     duration_ms = int((time.time() - start) * 1000)
 
-    stats = _parse_stats(result.stdout)
+    stats = _parse_stats(result.stdout, result.stderr)
     stats["duration_ms"] = duration_ms
     response = {
         "version": 1,
@@ -55,12 +58,12 @@ def main():
 
 
 def _build_prompt(request):
-    return build_executor_prompt(request)
+    return build_agent_prompt(request)
 
 
-def _parse_stats(stdout):
+def _parse_stats(stdout, stderr=""):
     stats = {}
-    lines = [line.strip().lower() for line in stdout.splitlines()]
+    lines = [line.strip().lower() for line in f"{stdout}\n{stderr}".splitlines()]
     for index, line in enumerate(lines):
         next_line = lines[index + 1] if index + 1 < len(lines) else ""
 

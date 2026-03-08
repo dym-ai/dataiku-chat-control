@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Executor protocol implementation for Claude Code CLI."""
+"""CLI agent script for running Claude Code against the test protocol."""
 
 import argparse
 import json
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-from suite.prompting import build_executor_prompt
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from suite.prompting import build_agent_prompt
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Claude Code via the test executor protocol")
+    parser = argparse.ArgumentParser(description="Run Claude Code via the test agent protocol")
     parser.add_argument("--request", required=True)
     parser.add_argument("--response", required=True)
     parser.add_argument("--workspace", help="Override workspace from the request payload")
@@ -47,7 +50,7 @@ def main():
 
 
 def _build_prompt(request):
-    return build_executor_prompt(request)
+    return build_agent_prompt(request)
 
 
 def _parse_stats(stdout):

@@ -1,151 +1,175 @@
 # Dataiku Agent Test Suite
 
-An executor-agnostic test harness for validating whether a coding agent, automation, or human workflow can build Dataiku pipelines correctly.
+This `tests/` folder is a small CLI-first harness for running a Dataiku task against an agent and checking whether the final output is correct.
 
-## How It Works
+At a high level, the harness does four things:
 
-The test suite has four components:
+1. Creates a fresh Dataiku project for the case.
+2. Copies the source datasets into that project.
+3. Runs your agent through a simple CLI request/response protocol.
+4. Validates the finished project against the case definition.
 
-- **Source projects** — Dataiku projects with hand-built pipelines that serve as the answer key (for example `BOBCHALLENGE`, or any project you choose)
-- **Fixtures** (`evals/fixtures/*.json`) — snapshots of what "correct" looks like: the prompt to give the executor, expected recipe types, and expected output data
-- **Evaluation core** (`evals/__init__.py`) — three functions: `setup()`, `validate()`, `teardown()`
-- **Executors** (`executors/*.py`) — black-box protocol implementations that actually perform the work (Codex CLI, Claude Code CLI, or your own custom executor)
+The agent can be Codex, Claude Code, or any other CLI-driven system that can read a request JSON and write a response JSON.
 
-Each fixture references a `source_project` on your Dataiku instance. You can write fixtures against any project. Fixtures are not tied to a single source project.
+## Assumptions
 
-### The Three Phases
+To run a case successfully, this README assumes:
 
-**1. Setup** creates a fresh Dataiku project and copies source datasets from the fixture's source project:
+- You already have a compatible agent CLI installed and working.
+- You have a running Dataiku DSS instance.
+- The source project referenced by the case exists on that instance.
+- The source datasets in that project already contain data.
+- You have Python with `dataikuapi` installed.
+- You have exported `DATAIKU_URL` and `DATAIKU_API_KEY`.
+- Your Dataiku API key can create and delete projects.
+- Optional: set `DATAIKU_SSL_VERIFY=true|false|/path/to/ca-bundle.pem` if you need explicit TLS verification control.
 
-```python
-case = setup(client, "dates")
-# Returns: {project_key: "BOBTEST_DATES_...", prompt: "I have a dataset...", sources: ["Dates"]}
-```
+## Quick Start
 
-At this point you have a clean project with only source data. No recipes, no outputs.
-
-**2. Executor execution** is your responsibility. The suite writes a request JSON and invokes any executor command you provide. The executor can use Claude Code, Codex, MCP tools, browser automation, or even a human-in-the-loop flow. The suite does not care how the pipeline gets built.
-
-**3. Validate** inspects the project and checks:
-
-| Check | What It Verifies |
-|-------|-----------------|
-| `no_python_recipes` | Agent used visual recipes, not Python |
-| `recipe_type_count` | Right kinds of recipes are present (for example at least 1 join, 3 prepare) |
-| `exists` | Expected output dataset exists |
-| `schema_columns` | Output has the right columns |
-| `row_count` | Output has the expected number of rows |
-| `data_values` | Spot-checked sample rows match expected values |
-
-```python
-result = validate(client, "dates", case["project_key"])
-# Returns: {passed: True/False, checks: [...], agent_stats: {...}}
-```
-
-## Available Test Cases
-
-These fixtures ship with the repo (source project: `BOBCHALLENGE`):
-
-| Fixture | Recipes | Recipe Types | What It Tests |
-|---------|---------|-------------|---------------|
-| `dates` | 1 | prepare | Date parsing + GREL formula to compute end-of-month |
-| `crane` | 5 | 2× prepare, join, prepare, group | Multi-step pipeline: filter, cross join, overlap calculation, aggregation |
-
-## Usage
-
-### Prerequisites
-
-- A running Dataiku DSS instance with the source project referenced by your fixtures
-- Source datasets in that project must have data (uploaded files)
-- Python with `dataikuapi` installed
-- `DATAIKU_URL` and `DATAIKU_API_KEY` exported in your shell
-- A Dataiku API key with permission to create and delete projects
-- Optional: `DATAIKU_SSL_VERIFY=true|false|/path/to/ca-bundle.pem` for TLS verification control
-
-### Option A: Interactive
-
-If you want to drive the executor manually, use the evaluation core directly:
-
-```python
-from tests.evals import setup, validate, teardown
-
-case = setup(client, "dates")
-print(case["prompt"])
-print(case["project_key"])
-
-# Run your executor manually here
-
-result = validate(client, "dates", case["project_key"])
-for check in result["checks"]:
-    status = "PASS" if check["passed"] else "FAIL"
-    print(f"{check['check']}: {status}")
-
-teardown(client, case["project_key"])
-```
-
-### Option B: CLI
-
-Use the bundled Claude executor by default:
+The generic command shape is:
 
 ```bash
-python tests/run_test.py dates
+python tests/run_test.py <case_name> --agent "<your agent command>"
 ```
 
-If your Dataiku instance uses an internal or custom certificate, you can control TLS verification explicitly:
+Assuming you are using Codex, the fastest way to run the built-in `dates` case is:
 
 ```bash
-DATAIKU_SSL_VERIFY=false python tests/run_test.py dates
-DATAIKU_SSL_VERIFY=/path/to/root-ca.pem python tests/run_test.py dates
+python tests/run_test.py dates --agent codex
 ```
 
-Use the bundled Codex executor against another workspace:
+Keep the generated Dataiku project after validation:
 
 ```bash
-python tests/run_test.py dates --agent codex --workspace /path/to/workspace
+python tests/run_test.py dates --agent codex --keep
 ```
 
-Keep the project after validation for inspection:
+Run Codex from another workspace:
 
 ```bash
-python tests/run_test.py crane --keep
+python tests/run_test.py dates \
+  --agent codex \
+  --workspace /Users/dmitriryssev/Documents/GitHub/dataiku-agent-dev-kit
 ```
 
-Use a custom executor command:
+Show transcript excerpts in the terminal report:
 
 ```bash
-python tests/run_test.py dates --executor "python /path/to/my_executor.py" --workspace /path/to/workspace
+python tests/run_test.py dates --agent codex --verbose
 ```
 
-### Executor Protocol
+Write the full request/response/report/transcript bundle to disk:
 
-The suite invokes an executor command by appending two arguments:
+```bash
+python tests/run_test.py dates \
+  --agent codex \
+  --artifacts-dir /tmp/dataiku-agent-runs
+```
+
+## Layout
+
+- `tests/cases/*.json`: case definitions
+- `tests/evals/__init__.py`: setup, validate, teardown
+- `tests/agents/*.py`: bundled agent scripts for common CLIs
+- `tests/suite/*.py`: shared protocol, prompt, and report helpers
+- `tests/run_test.py`: main CLI entrypoint
+
+## How A Run Works
+
+Each run has three phases.
+
+1. `setup()` creates a clean Dataiku project and copies the source datasets listed by the case.
+2. The harness runs your agent command with a request JSON and waits for a response JSON.
+3. `validate()` inspects the resulting Dataiku project and checks the output datasets.
+
+The validation focuses on final outcomes:
+
+- visual recipes should be used when they are sufficient
+- expected recipe types should be present
+- expected output datasets should exist
+- schemas should match
+- row counts should match
+- sampled data values should match
+
+The one hard rule is that Python recipes should not be used when a Dataiku visual recipe would suffice.
+
+## Running A Custom Agent
+
+Your agent is just a CLI command.
+
+The harness invokes it by appending:
 
 ```bash
 --request /tmp/request.json --response /tmp/response.json
 ```
 
-The request JSON contains:
+So if you run:
+
+```bash
+python tests/run_test.py dates --agent "python /path/to/my_agent.py"
+```
+
+the harness will invoke:
+
+```bash
+python /path/to/my_agent.py --request /tmp/request.json --response /tmp/response.json
+```
+
+`--workspace` is not passed on the command line. Instead, the workspace path is included in the request JSON. Your agent can use it as its working directory if that is helpful.
+
+The bundled scripts live in:
+
+- `tests/agents/codex.py`
+- `tests/agents/claude.py`
+
+Those scripts work out of the box if the underlying `codex` or `claude` CLI is already installed.
+
+## Agent Script Contract
+
+Your agent command should:
+
+1. Accept `--request <path>` and `--response <path>`.
+2. Read the request JSON from disk.
+3. Perform the task in the target Dataiku project.
+4. Write a response JSON to the response path.
+
+The harness owns setup, validation, reporting, cleanup, and artifact writing. The agent only needs to do the work required by the prompt.
+
+## Request JSON
+
+The request JSON currently looks like this:
 
 ```json
 {
   "version": 1,
-  "test_name": "dates",
-  "project_key": "BOBTEST_DATES_...",
+  "case_name": "dates",
+  "project_key": "BOBTEST_DATES_1772835245",
   "prompt": "The natural language task...",
   "sources": ["Dates"],
-  "workspace": "/optional/workspace/path"
+  "workspace": "/path/to/agent/workspace"
 }
 ```
 
-The response JSON should contain:
+Field meanings:
+
+- `version`: protocol version
+- `case_name`: the case being run
+- `project_key`: the generated Dataiku project the agent should work in
+- `prompt`: the natural-language task
+- `sources`: source datasets already present in the generated project
+- `workspace`: directory the agent can use for local tooling, scripts, skills, or scaffolding
+
+## Response JSON
+
+Your agent should write a response JSON like this:
 
 ```json
 {
   "version": 1,
   "status": "completed",
   "summary": "Short human-readable summary",
-  "stdout": "Optional executor output",
-  "stderr": "Optional executor stderr",
+  "stdout": "Optional agent stdout",
+  "stderr": "Optional agent stderr",
   "stats": {
     "duration_ms": 12345,
     "total_tokens": 1234,
@@ -154,56 +178,45 @@ The response JSON should contain:
 }
 ```
 
-The final CLI report includes:
-
-- pass/fail status and per-check results
-- executor stats when available, such as duration and token usage
-- a direct project URL when `--keep` is used
-
-Suggested `status` values:
+Common `status` values:
 
 - `completed`
 - `failed`
 - `aborted`
 - `unsupported`
 
-Bundled examples live in:
+## CLI Output And Artifacts
 
-- `tests/executors/codex_cli.py`
-- `tests/executors/claude_cli.py`
+By default, the CLI prints a compact report:
 
-### Example: Codex Against Another Workspace
+- case and project
+- pass/fail result
+- per-check validation results
+- agent stats when available
+- short agent summary
 
-If your agent tooling lives in another repo, point the suite at that workspace:
+Use `--verbose` if you want stdout/stderr excerpts inline in the terminal report.
 
-```bash
-python tests/run_test.py dates \
-  --agent codex \
-  --workspace /Users/dmitriryssev/Documents/GitHub/dataiku-agent-dev-kit
-```
+Use `--artifacts-dir` if you want the full run bundle written to disk. For each run, the harness writes a subdirectory named after the generated project key containing:
 
-The suite still owns setup, validation, and reporting. The executor just receives the prompt, project key, source datasets, and workspace path.
+- `request.json`
+- `agent_response.json`
+- `validation_result.json`
+- `report.txt`
+- `agent_stdout.txt`
+- `agent_stderr.txt`
 
-## What Gets Graded
+## Adding A New Case
 
-The framework validates **outcomes over process**:
+Create a new JSON file in `tests/cases/`.
 
-- It **doesn't** care about intermediate dataset names
-- It **doesn't** care about the exact number of recipe steps
-- It **does** care that visual recipes were used, the right recipe types are present, and the final output data is correct
-
-The one hard rule: **no Python recipes when visual recipes would suffice**. The point is to test whether the executor can use Dataiku's visual recipe system properly, not whether it can write pandas code.
-
-## Adding a New Test Case
-
-1. Build the pipeline in your source project, or verify it is already built.
-2. Create a new JSON file in `evals/fixtures/`. The fixture schema:
+Example:
 
 ```json
 {
-  "name": "my_test",
-  "description": "What this test validates.",
-  "prompt": "The natural language task to give the executor...",
+  "name": "my_case",
+  "description": "What this case validates.",
+  "prompt": "The natural language task to give the agent...",
   "source_project": "MY_PROJECT",
   "sources": ["Source_Dataset_Name"],
   "source_renames": {
@@ -229,28 +242,15 @@ The one hard rule: **no Python recipes when visual recipes would suffice**. The 
 
 Key fields:
 
-- **`source_project`** — any Dataiku project on your instance that has the source data
-- **`prompt`** — describe the task naturally; this is what the executor sees
-- **`sources`** — datasets to copy from the source project into the test project
-- **`source_renames`** — optional mapping to give datasets cleaner names in the test project
-- **`expected_recipes`** — recipe types that should be used, validated by count rather than exact names
-- **`expected_outputs`** — the final output to validate: schema, row count, and sample data for spot-checking
+- `source_project`: Dataiku project containing the source datasets
+- `prompt`: the task the agent sees
+- `sources`: datasets copied into the generated project before the agent runs
+- `source_renames`: optional source dataset renames for cleaner prompts and flows
+- `expected_recipes`: recipe types that should appear, validated by count
+- `expected_outputs`: final datasets to validate for schema, row count, and sampled values
 
-3. Test it:
+Then run it:
 
 ```bash
-python tests/run_test.py my_test --keep
+python tests/run_test.py my_case --agent codex --keep
 ```
-
-## Included BOBCHALLENGE Pipelines
-
-The `BOBCHALLENGE` project has additional pipelines that could be turned into fixtures:
-
-| Use Case | Recipes | Recipe Types | Description |
-|----------|---------|-------------|-------------|
-| avocado | 5 | prepare, group, window, topn | Avocado sales YoY analysis by region |
-| barbie | 6 | sampling, group, window, prepare | Barbie career analysis over decades |
-| mk8 | 7 | prepare, join, sort | Mario Kart 8 optimal kart ranking |
-| sox_compliance | 11 | prepare, join, group, stack | SOX audit - flag issues in control sign-off log |
-| ev | 13 | sampling, group, window, topn | EV population trends and model gaps |
-| stocks | 14 | stack, prepare, group, topn | Stock volatility, best/worst months, annual gains |

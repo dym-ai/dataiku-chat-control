@@ -1,55 +1,45 @@
-"""
-Bobchallenge test harness.
-
-Usage:
-    from tests.bobchallenge import setup, validate
-
-    case = setup(client, "dates")
-    # ... give case["prompt"] to your agent, pointed at case["project_key"] ...
-    result = validate(client, "dates", case["project_key"])
-    print(result)
-
-    teardown(client, case["project_key"])
-"""
+"""Evaluation helpers for case setup, validation, and teardown."""
 
 import json
 import time
 from pathlib import Path
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+CASES_DIR = Path(__file__).parent.parent / "cases"
 
 
-def _load_fixture(name):
-    path = FIXTURES_DIR / f"{name}.json"
+def _load_case(name):
+    path = CASES_DIR / f"{name}.json"
     with open(path) as f:
         return json.load(f)
 
 
-def setup(client, test_name):
-    """Create a clean project and copy source datasets from BOBCHALLENGE.
+def setup(client, case_name):
+    """Create a clean project and copy source datasets from a case source project.
 
     Returns dict with:
         - project_key: the new project key
         - prompt: the natural language task to give the agent
         - sources: list of source dataset names copied
     """
-    fixture = _load_fixture(test_name)
-    source_project = client.get_project(fixture["source_project"])
+    case = _load_case(case_name)
+    source_project = client.get_project(case["source_project"])
 
-    # Create test project
+    # Create a fresh project for this run
     ts = int(time.time())
-    project_key = f"BOBTEST_{test_name.upper()}_{ts}"
-    client.create_project(project_key, project_key, owner="admin")
+    project_key = f"BOBTEST_{case_name.upper()}_{ts}"
+    auth_info = client.get_auth_info()
+    owner = auth_info.get("associatedDSSUser") or auth_info["authIdentifier"]
+    client.create_project(project_key, project_key, owner=owner)
     test_project = client.get_project(project_key)
 
-    # Copy source datasets (optionally rename for cleaner test prompts)
-    renames = fixture.get("source_renames", {})
+    # Copy source datasets (optionally rename for cleaner case prompts)
+    renames = case.get("source_renames", {})
     copied_names = []
-    for ds_name in fixture["sources"]:
+    for ds_name in case["sources"]:
         source_ds = source_project.get_dataset(ds_name)
         target_name = renames.get(ds_name, ds_name)
 
-        # Create dataset in test project
+        # Create dataset in the generated project
         builder = test_project.new_managed_dataset(target_name)
         builder.with_store_into("filesystem_managed")
         builder.create()
@@ -62,18 +52,18 @@ def setup(client, test_name):
 
     return {
         "project_key": project_key,
-        "prompt": fixture["prompt"],
+        "prompt": case["prompt"],
         "sources": copied_names,
     }
 
 
-def validate(client, test_name, project_key, agent_stats=None):
-    """Validate that the project outputs match expected fixture data.
+def validate(client, case_name, project_key, agent_stats=None):
+    """Validate that the project outputs match expected case data.
 
     Args:
         client: DSSClient instance
-        test_name: fixture name (e.g. "dates", "crane")
-        project_key: the test project to validate
+        case_name: case name (e.g. "dates", "crane")
+        project_key: the generated project to validate
         agent_stats: optional dict with agent performance metrics, e.g.
             {"total_tokens": 80064, "tool_uses": 93, "duration_ms": 745545}
 
@@ -82,12 +72,12 @@ def validate(client, test_name, project_key, agent_stats=None):
         - checks: list of individual check results
         - agent_stats: the stats dict if provided
     """
-    fixture = _load_fixture(test_name)
+    case = _load_case(case_name)
     project = client.get_project(project_key)
     checks = []
 
     # Check recipes: no python recipes, and expected recipe types are present
-    expected_recipes = fixture.get("expected_recipes", [])
+    expected_recipes = case.get("expected_recipes", [])
     if expected_recipes:
         actual_recipes = project.list_recipes()
         actual_types = []
@@ -127,7 +117,7 @@ def validate(client, test_name, project_key, agent_stats=None):
                 "actual": actual_count,
             })
 
-    for ds_name, expected in fixture["expected_outputs"].items():
+    for ds_name, expected in case["expected_outputs"].items():
         # Check dataset exists
         try:
             ds = project.get_dataset(ds_name)
@@ -162,6 +152,21 @@ def validate(client, test_name, project_key, agent_stats=None):
         if not cols_match:
             continue
 
+        # Check schema types for the expected columns
+        actual_types = {c["name"]: c.get("type") for c in ds_def["schema"]["columns"]}
+        expected_types = {c["name"]: c.get("type") for c in expected["schema"]}
+        types_match = all(actual_types.get(col) == expected_types.get(col) for col in expected_cols)
+        checks.append({
+            "dataset": ds_name,
+            "check": "schema_types",
+            "passed": types_match,
+            "expected": expected_types,
+            "actual": {col: actual_types.get(col) for col in expected_cols},
+        })
+
+        if not types_match:
+            continue
+
         # Check data
         try:
             actual_rows = _read_rows(ds, project)
@@ -184,8 +189,8 @@ def validate(client, test_name, project_key, agent_stats=None):
             "actual": len(actual_rows),
         })
 
-        # Spot-check sample rows from fixture against actual data.
-        # Match by row position (fixture data = first N rows in order).
+        # Spot-check sample rows from the case against actual data.
+        # Match by row position (case data = first N rows in order).
         mismatches = []
         sample_data = expected.get("data", [])
         for i, exp in enumerate(sample_data):
@@ -225,7 +230,7 @@ def validate(client, test_name, project_key, agent_stats=None):
 
 
 def teardown(client, project_key):
-    """Delete the test project."""
+    """Delete the generated project."""
     client.get_project(project_key).delete()
 
 
